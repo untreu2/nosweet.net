@@ -34,22 +34,62 @@ app.post('/scrape-tweet', async (req, res) => {
 
         const tweetContent = await page.evaluate(() => {
             const tweetTextElements = document.querySelectorAll('div[data-testid="tweetText"] span');
+            const linkElements = document.querySelectorAll('div[data-testid="tweetText"] a');
+            const previewLinks = document.querySelectorAll('div[data-testid="card.wrapper"] a');
+            const imageElements = document.querySelectorAll('div[data-testid="tweetPhoto"] img');
+
             let fullText = '';
+            const uniqueLinks = new Set();
+
             tweetTextElements.forEach(element => {
                 fullText += element.innerText + ' ';
             });
+
+            linkElements.forEach(link => {
+                const href = link.href;
+                if (!href.includes('/hashtag/')) {
+                    uniqueLinks.add(href);
+                }
+            });
+
+            previewLinks.forEach(preview => {
+                const href = preview.href;
+                if (!href.includes('/hashtag/')) {
+                    uniqueLinks.add(href);
+                }
+            });
+
+            imageElements.forEach(image => {
+                uniqueLinks.add(image.src);
+            });
+
+            if (uniqueLinks.size > 0) {
+                fullText += '\n';
+                uniqueLinks.forEach(link => {
+                    fullText += link + '\n';
+                });
+            }
+
             return fullText.trim() || 'Tweet content not found.';
         });
 
-        const mediaUrl = await page.evaluate(() => {
-            const imageElement = document.querySelector('div[data-testid="tweetPhoto"] img');
+        const mediaUrls = await page.evaluate(() => {
+            const imageElements = document.querySelectorAll('div[data-testid="tweetPhoto"] img');
             const videoElement = document.querySelector('video');
-            return imageElement ? imageElement.src : videoElement ? videoElement.src : null;
+            const mediaLinks = [];
+
+            imageElements.forEach(image => mediaLinks.push(image.src));
+            if (videoElement) mediaLinks.push(videoElement.src);
+
+            return mediaLinks;
         });
 
         await browser.close();
 
-        res.json({ content: tweetContent, mediaUrl: mediaUrl || 'No media found' });
+        res.json({ 
+            content: tweetContent, 
+            mediaUrls: mediaUrls.length > 0 ? mediaUrls : ['No media found'] 
+        });
     } catch (error) {
         console.error('Scraping Error:', error);
         res.status(500).json({ error: 'Failed to scrape tweet' });
